@@ -3,30 +3,55 @@
 import React, { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
+import { useCart } from '@/contexts/CartContext';
 
 interface Category {
   id: string;
   name: string;
   slug: string;
-  description: string;
+  description?: string;
 }
 
 export const Header: React.FC = () => {
   const router = useRouter();
+  const pathname = usePathname();
+  const { itemCount, total } = useCart();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isCategoriesOpen, setIsCategoriesOpen] = useState(false);
   const [isMobileCategoriesOpen, setIsMobileCategoriesOpen] = useState(false);
   const [currency, setCurrency] = useState('EUR');
   const [categories, setCategories] = useState<Category[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
+  const [hoveredCategory, setHoveredCategory] = useState<string | null>(null);
+  const [categoryProducts, setCategoryProducts] = useState<any[]>([]);
   const categoriesRef = useRef<HTMLDivElement>(null);
+
+  const isActive = (href: string) => {
+    if (href === '/') {
+      return pathname === '/';
+    }
+    return pathname.startsWith(href);
+  };
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
     if (searchQuery.trim()) {
       router.push(`/products?search=${encodeURIComponent(searchQuery)}`);
       setSearchQuery('');
+    }
+  };
+
+  const handleCategoryHover = async (categorySlug: string) => {
+    setHoveredCategory(categorySlug);
+    try {
+      const response = await fetch(`/api/products?category=${categorySlug}&limit=8`);
+      const data = await response.json();
+      if (data.success) {
+        setCategoryProducts(data.data);
+      }
+    } catch (error) {
+      console.error('Error fetching category products:', error);
     }
   };
 
@@ -44,27 +69,43 @@ export const Header: React.FC = () => {
   ];
 
   useEffect(() => {
-    // Hardcoded categories to display
-    const displayCategories: Category[] = [
-      { id: '1', name: 'Oral Steroids', slug: 'oral-steroids', description: 'Tablet and capsule steroids for convenient oral administration' },
-      { id: '2', name: 'Injectable Steroids', slug: 'injectable-steroids', description: 'High-potency injectable anabolic steroids for muscle growth' },
-      { id: '3', name: 'Growth Hormones (HGH) and Peptides', slug: 'growth-hormones-hgh-and-peptides', description: 'Human growth hormone and peptide compounds for performance enhancement' },
-      { id: '4', name: 'Fat Loss', slug: 'fat-loss', description: 'Cutting-edge fat loss and metabolism-boosting compounds' },
-      { id: '5', name: 'Antiestrogens and PCT', slug: 'antiestrogens-and-pct', description: 'Post-cycle therapy and estrogen control products' },
-      { id: '6', name: 'High Blood Pressure', slug: 'high-blood-pressure', description: 'Medications to manage blood pressure and cardiovascular health' },
-      { id: '7', name: 'Sexual Health', slug: 'sexual-health', description: 'Products for sexual performance and reproductive health' },
-      { id: '8', name: 'Liver Aid', slug: 'liver-aid', description: 'Liver support and protection supplements' },
-      { id: '9', name: 'Antibiotics', slug: 'antibiotics', description: 'Prescription antibiotics for infection treatment' },
-      { id: '10', name: 'Acne', slug: 'acne', description: 'Acne treatment and skin care products' },
-      { id: '11', name: 'Antianxiety, Sleep Aid – Insomnia', slug: 'antianxiety-sleep-aid-insomnia', description: 'Sleep support and anxiety management compounds' },
-      { id: '12', name: 'Diuretics', slug: 'diuretics', description: 'Water management and diuretic compounds' },
-      { id: '13', name: 'Medical Equipments', slug: 'medical-equipments', description: 'Syringes, needles, and injection equipment' },
-      { id: '14', name: 'Original Pharmacy Products', slug: 'original-pharmacy-products', description: 'Authentic pharmaceutical products from licensed manufacturers' },
-      { id: '15', name: 'Pain Killers', slug: 'pain-killers', description: 'Pain relief and analgesic medications' },
-      { id: '16', name: 'SARMs', slug: 'sarms', description: 'Selective androgen receptor modulators for targeted effects' },
-      { id: '17', name: 'Steroid Cycles', slug: 'steroid-cycles', description: 'Pre-designed steroid cycle packages and stacks' },
-    ];
-    setCategories(displayCategories);
+    // Fetch categories from API
+    const fetchCategories = async () => {
+      try {
+        const response = await fetch('/api/categories');
+        const data = await response.json();
+        if (data.success && data.data) {
+          // Filter to show only main categories for megamenu (case-insensitive)
+          const mainCategories = [
+            'ORAL STEROIDS',
+            'ANTIESTROGENS AND PCT',
+            'ANTIBIOTICS',
+            'MEDICAL EQUIPMENTS',
+            'STEROID CYCLES',
+            'INJECTABLE STEROIDS',
+            'HIGH BLOOD PRESSURE',
+            'ACNE',
+            'ORIGINAL PHARMACY PRODUCTS',
+            'GROWTH HORMONES (HGH) AND PEPTIDES',
+            'SEXUAL HEALTH',
+            'ANTIANXIETY, SLEEP AID - INSOMNIA',
+            'PAIN KILLERS',
+            'FAT LOSS',
+            'LIVER AID',
+            'DIURETICS',
+            'SARMS',
+          ];
+
+          const filtered = data.data.filter((cat: Category) =>
+            mainCategories.includes(cat.name.toUpperCase())
+          );
+          setCategories(filtered);
+        }
+      } catch (error) {
+        console.error('Error fetching categories:', error);
+      }
+    };
+    fetchCategories();
   }, []);
 
   // Handle click outside to close megamenu
@@ -154,9 +195,9 @@ export const Header: React.FC = () => {
                     d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z"
                   />
                 </svg>
-                <span className="text-sm font-semibold text-dark-text">€540.00</span>
+                <span className="text-sm font-semibold text-dark-text">€{total.toFixed(2)}</span>
                 <span className="absolute -top-2 -right-2 bg-accent text-dark-text text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center">
-                  0
+                  {itemCount}
                 </span>
               </Link>
             </div>
@@ -236,7 +277,7 @@ export const Header: React.FC = () => {
                       <button
                         onClick={() => setIsCategoriesOpen(!isCategoriesOpen)}
                         className={`text-dark-text hover:text-accent transition-colors font-medium text-sm flex items-center gap-1 ${
-                          index === 0 ? 'text-accent border-b-2 border-accent pb-1' : ''
+                          isActive(link.href) ? 'text-accent' : ''
                         }`}
                       >
                         {link.label}
@@ -246,27 +287,35 @@ export const Header: React.FC = () => {
                       </button>
 
                       {/* Megamenu Dropdown */}
-                      {isCategoriesOpen && (
-                        <div className="absolute top-full left-1/2 transform -translate-x-1/2 mt-2 bg-white border border-gray-300 rounded-lg shadow-lg z-50 min-w-max">
-                          <div className="grid grid-cols-4 gap-6 p-6 max-w-6xl">
-                            {categories.map((category) => (
-                              <div key={category.slug}>
-                                <Link
-                                  href={`/products?category=${category.slug}`}
-                                  className="group"
-                                  onClick={() => setIsCategoriesOpen(false)}
+                      {isCategoriesOpen && categories.length > 0 && (
+                        <div
+                          className="absolute top-full mt-0 bg-white border border-gray-300 shadow-lg z-50"
+                          style={{ width: '1000px', left: '50%', transform: 'translateX(-50%)' }}
+                          onMouseLeave={() => {
+                            setHoveredCategory(null);
+                            setCategoryProducts([]);
+                          }}
+                        >
+                          <div className="p-8">
+                            <div className="grid grid-cols-4 gap-8">
+                              {categories.map((category) => (
+                                <button
+                                  key={category.slug}
+                                  onClick={() => {
+                                    router.push(`/products?category=${category.slug}`);
+                                    setIsCategoriesOpen(false);
+                                  }}
+                                  className="text-left group hover:opacity-80 transition-opacity"
                                 >
-                                  <div className="hover:text-accent transition-colors">
-                                    <h4 className="font-semibold text-dark-text text-sm mb-1">{category.name}</h4>
-                                    {category.description && (
-                                      <p className="text-xs text-gray-500 line-clamp-2 group-hover:text-accent">
-                                        {category.description}
-                                      </p>
-                                    )}
-                                  </div>
-                                </Link>
-                              </div>
-                            ))}
+                                  <h5 className="font-semibold text-dark-text group-hover:text-accent transition-colors text-sm mb-2">
+                                    {category.name.toUpperCase()}
+                                  </h5>
+                                  <p className="text-xs text-gray-600 line-clamp-2">
+                                    {category.description || 'Browse our selection'}
+                                  </p>
+                                </button>
+                              ))}
+                            </div>
                           </div>
                         </div>
                       )}
@@ -275,7 +324,7 @@ export const Header: React.FC = () => {
                     <Link
                       href={link.href}
                       className={`text-dark-text hover:text-accent transition-colors font-medium text-sm ${
-                        index === 0 ? 'text-accent border-b-2 border-accent pb-1' : ''
+                        isActive(link.href) ? 'text-accent' : ''
                       }`}
                     >
                       {link.label}
@@ -319,9 +368,9 @@ export const Header: React.FC = () => {
                     d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z"
                   />
                 </svg>
-                <span className="text-xs font-semibold text-dark-text">€540</span>
+                <span className="text-xs font-semibold text-dark-text">€{total.toFixed(0)}</span>
                 <span className="absolute -top-2 -right-2 bg-accent text-dark-text text-xs font-bold rounded-full w-4 h-4 flex items-center justify-center text-[10px]">
-                  0
+                  {itemCount}
                 </span>
               </Link>
             </div>
@@ -364,7 +413,9 @@ export const Header: React.FC = () => {
                   ) : (
                     <Link
                       href={link.href}
-                      className="block py-2 text-dark-text hover:text-accent transition-colors text-sm"
+                      className={`block py-2 transition-colors text-sm ${
+                        isActive(link.href) ? 'text-accent font-semibold' : 'text-dark-text hover:text-accent'
+                      }`}
                       onClick={() => setIsMenuOpen(false)}
                     >
                       {link.label}

@@ -1,6 +1,14 @@
 import fs from 'fs';
 import path from 'path';
 
+// Capitalize first letter of each word
+function capitalizeTitle(text: string): string {
+  return text
+    .split(' ')
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(' ');
+}
+
 export interface ProductData {
   id: string;
   name: string;
@@ -20,7 +28,78 @@ export interface CategoryData {
   description?: string;
 }
 
-export function parseCSVLine(line: string): string[] {
+// Custom CSV parser that handles quoted fields with newlines
+function parseCSVContent(content: string): Record<string, string>[] {
+  const lines = content.split('\n');
+  const headers = parseCSVLine(lines[0]);
+  const records: Record<string, string>[] = [];
+
+  let currentRecord: string[] = [];
+  let inQuotes = false;
+  let currentField = '';
+
+  for (let i = 1; i < lines.length; i++) {
+    const line = lines[i];
+
+    for (let j = 0; j < line.length; j++) {
+      const char = line[j];
+      const nextChar = line[j + 1];
+
+      if (char === '"') {
+        if (nextChar === '"') {
+          // Escaped quote
+          currentField += '"';
+          j++;
+        } else {
+          // Toggle quote state
+          inQuotes = !inQuotes;
+        }
+      } else if (char === ',' && !inQuotes) {
+        // Field separator
+        currentRecord.push(currentField);
+        currentField = '';
+      } else {
+        currentField += char;
+      }
+    }
+
+    // Handle newline
+    if (inQuotes) {
+      currentField += '\n';
+    } else {
+      // End of record
+      if (currentField || currentRecord.length > 0) {
+        currentRecord.push(currentField);
+        currentField = '';
+
+        if (currentRecord.length === headers.length) {
+          const record: Record<string, string> = {};
+          headers.forEach((header, index) => {
+            record[header] = currentRecord[index] || '';
+          });
+          records.push(record);
+          currentRecord = [];
+        }
+      }
+    }
+  }
+
+  // Handle last record
+  if (currentField || currentRecord.length > 0) {
+    currentRecord.push(currentField);
+    if (currentRecord.length === headers.length) {
+      const record: Record<string, string> = {};
+      headers.forEach((header, index) => {
+        record[header] = currentRecord[index] || '';
+      });
+      records.push(record);
+    }
+  }
+
+  return records;
+}
+
+function parseCSVLine(line: string): string[] {
   const result: string[] = [];
   let current = '';
   let insideQuotes = false;
@@ -48,113 +127,195 @@ export function parseCSVLine(line: string): string[] {
   return result;
 }
 
+// Main product categories (from the megamenu)
+const MAIN_CATEGORIES = [
+  'ORAL STEROIDS',
+  'INJECTABLE STEROIDS',
+  'GROWTH HORMONES (HGH) AND PEPTIDES',
+  'ANTIESTROGENS AND PCT',
+  'ANTIBIOTICS',
+  'MEDICAL EQUIPMENTS',
+  'STEROID CYCLES',
+  'FAT LOSS',
+  'SEXUAL HEALTH',
+  'ANTIANXIETY, SLEEP AID - INSOMNIA',
+  'PAIN KILLERS',
+  'LIVER AID',
+  'DIURETICS',
+  'SARMS',
+  'ACNE',
+  'HIGH BLOOD PRESSURE',
+  'ORIGINAL PHARMACY PRODUCTS',
+];
+
+// Specific category mappings for edge cases
+const CATEGORY_MAPPINGS: Record<string, string> = {
+  'CANADA PEPTIDES': 'GROWTH HORMONES (HGH) AND PEPTIDES',
+  'PEPTIDES': 'GROWTH HORMONES (HGH) AND PEPTIDES',
+};
+
 export function loadProductsFromCSV(): ProductData[] {
   const filePath = path.join(process.cwd(), 'products.csv');
-  
+
   if (!fs.existsSync(filePath)) {
     console.warn('products.csv not found');
     return [];
   }
 
-  const fileContent = fs.readFileSync(filePath, 'utf-8');
-  const lines = fileContent.split('\n');
-  
-  if (lines.length < 2) return [];
+  try {
+    const fileContent = fs.readFileSync(filePath, 'utf-8');
+    const records = parseCSVContent(fileContent);
 
-  const headers = parseCSVLine(lines[0]);
-  const products: ProductData[] = [];
+    const products: ProductData[] = [];
 
-  for (let i = 1; i < lines.length; i++) {
-    if (!lines[i].trim()) continue;
+    for (let i = 0; i < records.length; i++) {
+      try {
+        const row = records[i];
 
-    try {
-      const values = parseCSVLine(lines[i]);
-      const row: Record<string, string> = {};
+        // Handle BOM in first column name
+        let postTitle = row.post_title || row['﻿post_title'];
 
-      headers.forEach((header, index) => {
-        row[header] = values[index] || '';
-      });
+        // Get price
+        let price = 0;
+        if (row.regular_price) {
+          price = parseFloat(row.regular_price.trim()) || 0;
+        }
 
-      const price = parseFloat(row.regular_price) || 0;
-      let stock = parseInt(row.stock || '0') || 0;
-      // Default to 100 if stock is 0 or not provided
-      if (stock === 0) {
-        stock = 100;
-      }
+        // Get stock
+        let stock = parseInt(row.stock || '0') || 0;
+        if (stock === 0) {
+          stock = 100;
+        }
 
-      if (!row.post_title || price <= 0) continue;
+        // Skip if no title
+        if (!postTitle) continue;
 
-      // Parse images
-      const images: string[] = [];
-      if (row.images) {
-        const imageParts = row.images.split('|');
-        for (const part of imageParts) {
-          const match = part.match(/https?:\/\/[^\s!]+/);
-          if (match) {
-            images.push(match[0].trim());
+        // If no price, use a default price of 50
+        if (price <= 0) {
+          price = 50;
+        }
+
+        // Parse images
+        const images: string[] = [];
+        if (row.images) {
+          const imageParts = row.images.split('|');
+          for (const part of imageParts) {
+            const match = part.match(/https?:\/\/[^\s!]+/);
+            if (match) {
+              images.push(match[0].trim());
+            }
           }
         }
+
+        // Get category - intelligently match against main categories only
+        let category = 'Uncategorized';
+        if (row['tax:product_cat']) {
+          const cats = row['tax:product_cat'].split('|').map(c => c.trim());
+
+          // Try to find a category that matches one of the MAIN categories
+          let foundCategory = null;
+          for (const cat of cats) {
+            const catUpper = cat.toUpperCase();
+
+            // Check if it's a direct match
+            if (MAIN_CATEGORIES.includes(catUpper)) {
+              foundCategory = cat;
+              break;
+            }
+
+            // Check if it's a subcategory (e.g., "Injectable Steroids > Drostanolone Propionate")
+            if (catUpper.includes('>')) {
+              const mainPart = catUpper.split('>')[0].trim();
+              if (MAIN_CATEGORIES.includes(mainPart)) {
+                foundCategory = mainPart;
+                break;
+              }
+            }
+
+            // Check if it's a mapped category (brand or subcategory)
+            if (CATEGORY_MAPPINGS[catUpper]) {
+              foundCategory = CATEGORY_MAPPINGS[catUpper];
+              break;
+            }
+          }
+
+          // If no main category found, use the first non-empty category
+          if (foundCategory) {
+            category = foundCategory;
+          } else if (cats.length > 0 && cats[0]) {
+            category = cats[0];
+          }
+        }
+
+        products.push({
+          id: row.ID || `product-${i}`,
+          name: capitalizeTitle(postTitle.trim()),
+          slug: row.post_name || postTitle.toLowerCase().replace(/\s+/g, '-'),
+          price,
+          stock,
+          images,
+          category,
+          brand: row['tax:product_brand']?.trim() || undefined,
+          description: row.post_excerpt || row.post_content || undefined,
+        });
+      } catch (error) {
+        // Silently skip rows with parsing errors
       }
-
-      products.push({
-        id: row.ID || `product-${i}`,
-        name: row.post_title,
-        slug: row.post_name,
-        price,
-        stock,
-        images,
-        category: row['tax:product_cat']?.split('|')[0]?.trim() || 'Uncategorized',
-        brand: row['tax:product_brand'] || undefined,
-        description: row.post_excerpt || row.post_content || undefined,
-      });
-    } catch (error) {
-      console.error(`Error parsing product row ${i}:`, error);
     }
-  }
 
-  return products;
+    console.log(`✓ Loaded ${products.length} products from CSV`);
+    return products;
+  } catch (error) {
+    console.error('Error loading products from CSV:', error);
+    return [];
+  }
 }
 
 export function loadCategoriesFromCSV(): CategoryData[] {
   const filePath = path.join(process.cwd(), 'categories.csv');
-  
+
   if (!fs.existsSync(filePath)) {
     console.warn('categories.csv not found');
     return [];
   }
 
-  const fileContent = fs.readFileSync(filePath, 'utf-8');
-  const lines = fileContent.split('\n');
-  
-  if (lines.length < 2) return [];
+  try {
+    const fileContent = fs.readFileSync(filePath, 'utf-8');
+    const lines = fileContent.split('\n');
 
-  const headers = parseCSVLine(lines[0]);
-  const categories: CategoryData[] = [];
+    if (lines.length < 2) return [];
 
-  for (let i = 1; i < lines.length; i++) {
-    if (!lines[i].trim()) continue;
+    const headers = parseCSVLine(lines[0]);
+    const categories: CategoryData[] = [];
 
-    try {
-      const values = parseCSVLine(lines[i]);
-      const row: Record<string, string> = {};
+    for (let i = 1; i < lines.length; i++) {
+      if (!lines[i].trim()) continue;
 
-      headers.forEach((header, index) => {
-        row[header] = values[index] || '';
-      });
+      try {
+        const values = parseCSVLine(lines[i]);
+        const row: Record<string, string> = {};
 
-      if (row.name === 'Uncategorized') continue;
+        headers.forEach((header, index) => {
+          row[header] = values[index] || '';
+        });
 
-      categories.push({
-        id: row.term_id,
-        name: row.name,
-        slug: row.slug,
-        description: row.description || undefined,
-      });
-    } catch (error) {
-      console.error(`Error parsing category row ${i}:`, error);
+        if (row.name === 'Uncategorized') continue;
+
+        categories.push({
+          id: row.term_id,
+          name: row.name,
+          slug: row.slug,
+          description: row.description || undefined,
+        });
+      } catch (error) {
+        // Silently skip rows with parsing errors
+      }
     }
-  }
 
-  return categories;
+    return categories;
+  } catch (error) {
+    console.error('Error loading categories from CSV:', error);
+    return [];
+  }
 }
 
