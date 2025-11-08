@@ -3,6 +3,118 @@
 import React, { useState, useEffect, use } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
+import { ProductCard } from '@/components/products/ProductCard';
+import { ProductSpecificationsComponent } from '@/components/products/ProductSpecifications';
+import { useCart } from '@/contexts/CartContext';
+import { useToast } from '@/contexts/ToastContext';
+import { cleanHtmlContent } from '@/lib/utils/html-parser';
+import { ProductSpecifications } from '@/lib/services/specification-extractor';
+
+// Component to render HTML content with proper formatting
+const HtmlContent = ({ html }: { html: string }) => {
+  if (!html) return null;
+
+  // Parse HTML and extract meaningful content
+  const parseHtml = (content: string) => {
+    const elements: React.ReactNode[] = [];
+    let key = 0;
+
+    // Extract table rows for key information
+    const tableMatch = content.match(/<table[^>]*>[\s\S]*?<\/table>/);
+    if (tableMatch) {
+      const tableHtml = tableMatch[0];
+      const rows = tableHtml.match(/<tr[^>]*>[\s\S]*?<\/tr>/g) || [];
+
+      elements.push(
+        <div key={key++} className="mb-6 space-y-2">
+          {rows.map((row, idx) => {
+            const cells = row.match(/<td[^>]*>([\s\S]*?)<\/td>/g) || [];
+            if (cells.length >= 2 && cells[0] && cells[1]) {
+              const label = cleanHtmlContent(cells[0]);
+              const value = cleanHtmlContent(cells[1]);
+
+              if (label && value && label.trim() !== '' && value.trim() !== '') {
+                return (
+                  <div key={idx} className="flex flex-col sm:flex-row sm:gap-4 gap-1">
+                    <span className="font-semibold text-gray-900 text-sm sm:text-base sm:min-w-fit">{label}:</span>
+                    <span className="text-gray-700 text-sm sm:text-base">{value}</span>
+                  </div>
+                );
+              }
+            }
+            return null;
+          })}
+        </div>
+      );
+    }
+
+    // Extract headings and paragraphs
+    const textContent = content.replace(/<table[^>]*>[\s\S]*?<\/table>/g, '');
+
+    // Split by headings
+    const sections = textContent.split(/(<h[1-6][^>]*>[\s\S]*?<\/h[1-6]>)/);
+
+    sections.forEach((section) => {
+      if (!section.trim()) return;
+
+      // Handle headings
+      const headingMatch = section.match(/<h([1-6])[^>]*>([\s\S]*?)<\/h[1-6]>/);
+      if (headingMatch) {
+        const level = parseInt(headingMatch[1]);
+        const text = cleanHtmlContent(headingMatch[2]);
+        if (text.trim()) {
+          const headingClasses = {
+            1: 'text-xl sm:text-2xl font-bold mt-6 sm:mt-8 mb-3 sm:mb-4',
+            2: 'text-lg sm:text-xl font-bold mt-5 sm:mt-6 mb-2 sm:mb-3',
+            3: 'text-base sm:text-lg font-bold mt-4 sm:mt-5 mb-2',
+            4: 'text-sm sm:text-base font-bold mt-3 sm:mt-4 mb-2',
+            5: 'text-sm font-bold mt-2 sm:mt-3 mb-1',
+            6: 'text-xs sm:text-sm font-bold mt-2 mb-1',
+          }[level] || 'text-base sm:text-lg font-bold mt-4 mb-2';
+
+          elements.push(
+            <h3 key={key++} className={headingClasses}>
+              {text}
+            </h3>
+          );
+        }
+      } else {
+        // Handle paragraphs
+        const paragraphs = section.match(/<p[^>]*>([\s\S]*?)<\/p>/g) || [];
+        if (paragraphs.length > 0) {
+          paragraphs.forEach((para) => {
+            const text = cleanHtmlContent(para);
+            if (text.trim()) {
+              elements.push(
+                <p key={key++} className="text-gray-700 text-sm sm:text-base mb-4 leading-relaxed">
+                  {text}
+                </p>
+              );
+            }
+          });
+        } else {
+          // If no paragraphs found, treat the whole section as text content
+          const text = cleanHtmlContent(section);
+          if (text.trim() && text.trim().length > 0) {
+            elements.push(
+              <p key={key++} className="text-gray-700 text-sm sm:text-base mb-4 leading-relaxed">
+                {text}
+              </p>
+            );
+          }
+        }
+      }
+    });
+
+    return elements;
+  };
+
+  return (
+    <div className="prose prose-sm max-w-none text-gray-700">
+      {parseHtml(html)}
+    </div>
+  );
+};
 
 interface Product {
   id: string;
@@ -14,6 +126,9 @@ interface Product {
   category: string;
   brand?: string;
   description?: string;
+  shortDescription?: string;
+  content?: string;
+  specifications?: ProductSpecifications;
 }
 
 interface Review {
@@ -27,29 +142,14 @@ interface Review {
 
 export default function ProductPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = use(params);
+  const { addToCart } = useCart();
+  const { addToast } = useToast();
   const [product, setProduct] = useState<Product | null>(null);
   const [relatedProducts, setRelatedProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedImage, setSelectedImage] = useState(0);
   const [quantity, setQuantity] = useState(1);
-  const [reviews, setReviews] = useState<Review[]>([
-    {
-      id: '1',
-      author: 'John Doe',
-      rating: 5,
-      title: 'Excellent Product',
-      comment: 'Great quality and fast delivery. Highly recommended!',
-      date: '2024-01-15',
-    },
-    {
-      id: '2',
-      author: 'Jane Smith',
-      rating: 4,
-      title: 'Good Value',
-      comment: 'Good product, met my expectations. Will order again.',
-      date: '2024-01-10',
-    },
-  ]);
+  const [reviews, setReviews] = useState<Review[]>([]);
   const [newReview, setNewReview] = useState({ rating: 5, title: '', comment: '' });
   const [showReviewForm, setShowReviewForm] = useState(false);
 
@@ -131,18 +231,18 @@ export default function ProductPage({ params }: { params: Promise<{ slug: string
 
       {/* Product Section */}
       <div className="max-w-7xl mx-auto px-4 py-8">
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-12">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-12">
           {/* Left: Product Images */}
-          <div className="lg:col-span-2">
+          <div>
             <div className="bg-white rounded-lg border border-gray-200 p-6 mb-4">
               <div className="mb-4 bg-gray-100 rounded-lg overflow-hidden h-96 flex items-center justify-center">
                 {product.images && product.images[selectedImage] ? (
                   <Image
                     src={product.images[selectedImage]}
                     alt={product.name}
-                    width={400}
-                    height={400}
-                    className="object-contain"
+                    width={500}
+                    height={500}
+                    className="object-contain max-w-full max-h-full"
                   />
                 ) : (
                   <div className="text-gray-400">No image available</div>
@@ -166,13 +266,12 @@ export default function ProductPage({ params }: { params: Promise<{ slug: string
             </div>
           </div>
 
-          {/* Right: Product Info & Related */}
-          <div className="lg:col-span-1 space-y-6">
-            {/* Product Details */}
+          {/* Right: Product Info */}
+          <div>
             <div className="bg-white rounded-lg border border-gray-200 p-6 sticky top-4">
               <h1 className="text-2xl font-bold text-dark-text mb-2">{product.name}</h1>
               {product.brand && <p className="text-sm text-gray-600 mb-4">Brand: {product.brand}</p>}
-              
+
               <div className="flex items-center gap-2 mb-4">
                 <div className="flex items-center gap-1">
                   {[...Array(5)].map((_, i) => (
@@ -182,8 +281,18 @@ export default function ProductPage({ params }: { params: Promise<{ slug: string
                 <span className="text-sm text-gray-600">({reviews.length} reviews)</span>
               </div>
 
+              {/* Short Description - only show if no specifications */}
+              {product.shortDescription && !product.specifications && (
+                <p className="text-gray-700 text-sm mb-4 pb-4 border-b border-gray-200">
+                  {cleanHtmlContent(product.shortDescription)}
+                </p>
+              )}
+
+              {/* Product Specifications */}
+              <ProductSpecificationsComponent specifications={product.specifications} />
+
               <div className="mb-6 pb-6 border-b border-gray-200">
-                <p className="text-3xl font-bold text-accent mb-2">€{product.price.toFixed(2)}</p>
+                <p className="text-3xl font-bold text-black mb-2">€{product.price.toFixed(2)}</p>
                 <p className={`text-sm font-medium ${product.stock > 0 ? 'text-green-600' : 'text-red-600'}`}>
                   {product.stock > 0 ? `${product.stock} in stock` : 'Out of stock'}
                 </p>
@@ -215,6 +324,11 @@ export default function ProductPage({ params }: { params: Promise<{ slug: string
                 </div>
 
                 <button
+                  onClick={() => {
+                    addToCart(product.id, product.name, product.price, quantity);
+                    addToast('Added to cart!', 'success');
+                    setQuantity(1);
+                  }}
                   disabled={product.stock === 0}
                   className="w-full px-6 py-3 bg-gray-100 text-dark-text rounded-lg font-medium hover:bg-accent transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
@@ -222,42 +336,20 @@ export default function ProductPage({ params }: { params: Promise<{ slug: string
                 </button>
               </div>
             </div>
-
-            {/* Related Products */}
-            {relatedProducts.length > 0 && (
-              <div className="bg-white rounded-lg border border-gray-200 p-6">
-                <h3 className="text-lg font-bold text-dark-text mb-4">Related Products</h3>
-                <div className="space-y-3">
-                  {relatedProducts.map((related) => (
-                    <Link
-                      key={related.slug}
-                      href={`/products/${related.slug}`}
-                      className="block p-3 border border-gray-200 rounded-lg hover:shadow-md transition-shadow"
-                    >
-                      <p className="text-sm font-medium text-dark-text truncate">{related.name}</p>
-                      <p className="text-accent font-bold">€{related.price.toFixed(2)}</p>
-                    </Link>
-                  ))}
-                </div>
-              </div>
-            )}
           </div>
         </div>
+
+
 
         {/* Product Description */}
-        <div className="bg-white rounded-lg border border-gray-200 p-8 mb-12">
-          <h2 className="text-2xl font-bold text-dark-text mb-4">Product Description</h2>
-          <div className="prose prose-sm max-w-none text-gray-700">
-            {product.description ? (
-              <p className="whitespace-pre-wrap">{product.description}</p>
-            ) : (
-              <p className="text-gray-500">No description available for this product.</p>
-            )}
+        {product.content && (
+          <div className="bg-white rounded-lg border border-gray-200 p-8 mb-12">
+            <HtmlContent html={product.content} />
           </div>
-        </div>
+        )}
 
         {/* Reviews Section */}
-        <div className="bg-white rounded-lg border border-gray-200 p-8">
+        <div className="bg-white rounded-lg border border-gray-200 p-8 mb-12">
           <div className="flex items-center justify-between mb-8">
             <h2 className="text-2xl font-bold text-dark-text">Customer Reviews</h2>
             <button
@@ -347,6 +439,28 @@ export default function ProductPage({ params }: { params: Promise<{ slug: string
             )}
           </div>
         </div>
+
+        {/* Related Products Section */}
+        {relatedProducts.length > 0 && (
+          <div className="bg-white rounded-lg border border-gray-200 p-8 mb-12">
+            <h3 className="text-2xl font-bold text-dark-text mb-6">Related Products</h3>
+            <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-6">
+              {relatedProducts.map((related) => (
+                <ProductCard
+                  key={related.slug}
+                  id={related.id}
+                  name={related.name}
+                  slug={related.slug}
+                  price={related.price}
+                  stock={related.stock}
+                  images={related.images}
+                  category={related.category}
+                  brand={related.brand}
+                />
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

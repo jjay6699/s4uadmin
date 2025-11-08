@@ -44,7 +44,7 @@ export const Footer: React.FC = () => {
     { icon: '🌍', text: 'Fast Worldwide Shipping - We ship all over the world from EU!' },
     { icon: '⭐', text: '5 star reviews. You know you can trust us.' },
     { icon: '💳', text: 'Pay with your Domestic Bank account. More options available at checkout.' },
-    { icon: '✓', text: 'Authenticity: All products on this website are genuine.' },
+    { icon: '✅', text: 'Authenticity: All products on this website are genuine.' },
   ];
 
   return (

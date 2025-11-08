@@ -128,7 +128,7 @@ export default function Home() {
                 description: 'Our clients consistently rate us 5 stars for exceptional quality and outstanding service. See why we\'re trusted and highly recommended by so many!'
               },
               {
-                icon: '✓',
+                icon: '✅',
                 title: 'Lab Tested',
                 description: 'Our performance enhancement products are thoroughly lab-tested to guarantee purity, potency, and safety.'
               },

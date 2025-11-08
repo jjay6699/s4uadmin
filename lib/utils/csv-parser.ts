@@ -1,5 +1,9 @@
 import fs from 'fs';
 import path from 'path';
+import { extractSpecifications, ProductSpecifications } from '@/lib/services/specification-extractor';
+
+// Re-export for backward compatibility
+export type { ProductSpecifications };
 
 // Capitalize first letter of each word
 function capitalizeTitle(text: string): string {
@@ -8,6 +12,7 @@ function capitalizeTitle(text: string): string {
     .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
     .join(' ');
 }
+
 
 export interface ProductData {
   id: string;
@@ -19,6 +24,9 @@ export interface ProductData {
   category: string;
   brand?: string;
   description?: string;
+  shortDescription?: string;
+  content?: string;
+  specifications?: ProductSpecifications;
 }
 
 export interface CategoryData {
@@ -247,6 +255,8 @@ export function loadProductsFromCSV(): ProductData[] {
           }
         }
 
+        const shortDesc = row.post_excerpt?.trim();
+        const fullContent = row.post_content?.trim();
         products.push({
           id: row.ID || `product-${i}`,
           name: capitalizeTitle(postTitle.trim()),
@@ -257,6 +267,9 @@ export function loadProductsFromCSV(): ProductData[] {
           category,
           brand: row['tax:product_brand']?.trim() || undefined,
           description: row.post_excerpt || row.post_content || undefined,
+          shortDescription: shortDesc || undefined,
+          content: fullContent || undefined,
+          specifications: extractSpecifications(shortDesc || '', fullContent),
         });
       } catch (error) {
         // Silently skip rows with parsing errors

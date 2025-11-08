@@ -6,6 +6,7 @@ export async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams;
     const page = parseInt(searchParams.get('page') || '1');
     const limit = parseInt(searchParams.get('limit') || '21');
+    const slug = searchParams.get('slug');
     const category = searchParams.get('category');
     const search = searchParams.get('search')?.toLowerCase();
     const brandsParam = searchParams.get('brands');
@@ -15,15 +16,27 @@ export async function GET(request: NextRequest) {
 
     let products = loadProductsFromCSV();
 
-    // Filter by category (match by slug)
+    // Filter by slug (for single product)
+    if (slug) {
+      products = products.filter((p) => p.slug === slug);
+    }
+
+    // Filter by category (match by name or slug)
     if (category) {
       products = products.filter((p) => {
-        // Convert category name to slug for comparison
-        const categorySlug = p.category
+        // Convert both to slug for comparison
+        const productCategorySlug = p.category
           .toLowerCase()
           .replace(/\s+/g, '-')
           .replace(/[^\w-]/g, '');
-        return categorySlug === category.toLowerCase();
+        const filterCategorySlug = category
+          .toLowerCase()
+          .replace(/\s+/g, '-')
+          .replace(/[^\w-]/g, '');
+
+        // Also check for exact name match (case-insensitive)
+        return productCategorySlug === filterCategorySlug ||
+               p.category.toLowerCase() === category.toLowerCase();
       });
     }
 
