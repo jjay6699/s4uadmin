@@ -86,7 +86,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
                 // Add to cart logic will be implemented later
               }}
               disabled={!inStock}
-              className="w-full md:w-auto text-xs md:text-sm"
+              className="w-full md:w-auto text-[13px] md:text-sm"
             >
               Add to Cart
             </Button>
