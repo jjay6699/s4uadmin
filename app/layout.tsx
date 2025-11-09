@@ -1,10 +1,10 @@
 import type { Metadata } from "next";
 import "./globals.css";
-import { Header } from "@/components/layout/Header";
-import { Footer } from "@/components/layout/Footer";
 import { CartProvider } from "@/contexts/CartContext";
 import { ToastProvider } from "@/contexts/ToastContext";
 import { ToastContainer } from "@/components/common/Toast";
+import { AdminProvider } from "@/contexts/AdminContext";
+import { ConditionalLayout } from "@/components/layout/ConditionalLayout";
 
 export const metadata: Metadata = {
   title: "Steroids4u - Best EU Online Steroid Shop",
@@ -20,16 +20,16 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body className="antialiased bg-white text-dark-text" suppressHydrationWarning>
-        <CartProvider>
-          <ToastProvider>
-            <Header />
-            <main className="min-h-screen">
-              {children}
-            </main>
-            <Footer />
-            <ToastContainer />
-          </ToastProvider>
-        </CartProvider>
+        <AdminProvider>
+          <CartProvider>
+            <ToastProvider>
+              <ConditionalLayout>
+                {children}
+              </ConditionalLayout>
+              <ToastContainer />
+            </ToastProvider>
+          </CartProvider>
+        </AdminProvider>
       </body>
     </html>
   );

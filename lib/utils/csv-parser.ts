@@ -26,7 +26,17 @@ export interface ProductData {
   description?: string;
   shortDescription?: string;
   content?: string;
+  tags?: string[];
   specifications?: ProductSpecifications;
+  seo?: {
+    title?: string;
+    description?: string;
+    keywords?: string;
+    ogTitle?: string;
+    ogDescription?: string;
+    twitterTitle?: string;
+    twitterDescription?: string;
+  };
 }
 
 export interface CategoryData {
@@ -34,6 +44,7 @@ export interface CategoryData {
   name: string;
   slug: string;
   description?: string;
+  parent?: string;
 }
 
 // Custom CSV parser that handles quoted fields with newlines
@@ -257,6 +268,13 @@ export function loadProductsFromCSV(): ProductData[] {
 
         const shortDesc = row.post_excerpt?.trim();
         const fullContent = row.post_content?.trim();
+
+        // Parse tags
+        const tags: string[] = [];
+        if (row['tax:product_tag']) {
+          tags.push(...row['tax:product_tag'].split('|').map(t => t.trim()).filter(Boolean));
+        }
+
         products.push({
           id: row.ID || `product-${i}`,
           name: capitalizeTitle(postTitle.trim()),
@@ -269,7 +287,17 @@ export function loadProductsFromCSV(): ProductData[] {
           description: row.post_excerpt || row.post_content || undefined,
           shortDescription: shortDesc || undefined,
           content: fullContent || undefined,
+          tags: tags.length > 0 ? tags : undefined,
           specifications: extractSpecifications(shortDesc || '', fullContent),
+          seo: {
+            title: row['meta:_aioseo_title']?.trim() || undefined,
+            description: row['meta:_aioseo_description']?.trim() || undefined,
+            keywords: row['meta:_aioseo_keywords']?.trim() || undefined,
+            ogTitle: row['meta:_aioseo_og_title']?.trim() || undefined,
+            ogDescription: row['meta:_aioseo_og_description']?.trim() || undefined,
+            twitterTitle: row['meta:_aioseo_twitter_title']?.trim() || undefined,
+            twitterDescription: row['meta:_aioseo_twitter_description']?.trim() || undefined,
+          },
         });
       } catch (error) {
         // Silently skip rows with parsing errors
@@ -319,6 +347,7 @@ export function loadCategoriesFromCSV(): CategoryData[] {
           name: row.name,
           slug: row.slug,
           description: row.description || undefined,
+          parent: row.parent || '0',
         });
       } catch (error) {
         // Silently skip rows with parsing errors
