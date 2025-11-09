@@ -1,7 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import jwt from 'jsonwebtoken';
-import { parseCSV } from '@/lib/utils/csv-parser';
-import path from 'path';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
 
