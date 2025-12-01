@@ -52,6 +52,11 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   }, []);
 
   const login = async (email: string, password: string) => {
+    const logPrefix = '[AdminContext]';
+    if (process.env.NODE_ENV !== 'production') {
+      console.log(`${logPrefix} Attempting login for`, email);
+    }
+
     try {
       const response = await fetch('/api/admin/auth/login', {
         method: 'POST',
@@ -62,13 +67,23 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       });
 
       if (!response.ok) {
+        if (process.env.NODE_ENV !== 'production') {
+          console.warn(`${logPrefix} Login failed with status`, response.status);
+        }
         throw new Error('Login failed');
       }
 
       const data = await response.json();
       localStorage.setItem('admin_token', data.token);
       setAdmin(data.admin);
+
+      if (process.env.NODE_ENV !== 'production') {
+        console.log(`${logPrefix} Login successful for`, email);
+      }
     } catch (error) {
+      if (process.env.NODE_ENV !== 'production') {
+        console.error(`${logPrefix} Login error`, error);
+      }
       throw error;
     }
   };
@@ -92,4 +107,3 @@ export const useAdmin = () => {
   }
   return context;
 };
-

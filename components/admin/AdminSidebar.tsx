@@ -25,7 +25,7 @@ export const AdminSidebar: React.FC = () => {
 
   const handleLogout = () => {
     logout();
-    router.push('/admin-s4u-login');
+    router.push('/admin');
   };
 
   const isActive = (href: string) => pathname === href;
@@ -84,4 +84,3 @@ export const AdminSidebar: React.FC = () => {
     </div>
   );
 };
-

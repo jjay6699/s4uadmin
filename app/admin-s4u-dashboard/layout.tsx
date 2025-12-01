@@ -15,7 +15,7 @@ export default function AdminLayout({
 
   useEffect(() => {
     if (!isLoading && !isAuthenticated) {
-      router.push('/admin-s4u-login');
+      router.push('/admin');
     }
   }, [isAuthenticated, isLoading, router]);
 
@@ -45,4 +45,3 @@ export default function AdminLayout({
     </div>
   );
 }
-

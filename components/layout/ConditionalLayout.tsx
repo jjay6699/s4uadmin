@@ -8,7 +8,7 @@ export function ConditionalLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   
   // Check if we're on an admin route
-  const isAdminRoute = pathname?.startsWith('/admin-s4u-dashboard') || pathname?.startsWith('/admin-s4u-login');
+  const isAdminRoute = pathname?.startsWith('/admin-s4u-dashboard') || pathname === '/admin';
 
   return (
     <>
@@ -20,4 +20,3 @@ export function ConditionalLayout({ children }: { children: React.ReactNode }) {
     </>
   );
 }
-

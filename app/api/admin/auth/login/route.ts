@@ -26,6 +26,7 @@ export async function POST(request: NextRequest) {
 
     // Check credentials against demo admin
     if (email === DEMO_ADMIN.email && password === DEMO_ADMIN.password) {
+      console.info('[AdminAuth] Successful login', { email });
       // Generate JWT token
       const token = jwt.sign(
         {
@@ -49,16 +50,16 @@ export async function POST(request: NextRequest) {
       });
     }
 
+    console.warn('[AdminAuth] Invalid credentials', { email });
     return NextResponse.json(
       { success: false, error: 'Invalid email or password' },
       { status: 401 }
     );
   } catch (error) {
-    console.error('Login error:', error);
+    console.error('[AdminAuth] Login error:', error);
     return NextResponse.json(
       { success: false, error: 'Internal server error' },
       { status: 500 }
     );
   }
 }
-
