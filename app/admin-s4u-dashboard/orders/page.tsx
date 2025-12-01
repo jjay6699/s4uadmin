@@ -3,15 +3,52 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 
+interface Address {
+  fullName: string;
+  email: string;
+  phone: string;
+  street: string;
+  city: string;
+  state: string;
+  postalCode: string;
+  country: string;
+}
+
+interface OrderHistoryEntry {
+  date: string;
+  label: string;
+  note?: string;
+}
+
+interface OrderItem {
+  productId: string;
+  productName: string;
+  quantity: number;
+  price: number;
+}
+
 interface Order {
   id: string;
   userId: string;
+  customerName: string;
+  customerEmail: string;
+  customerPhone?: string;
   total: number;
-  status: string;
-  paymentStatus: string;
+  status: 'pending' | 'processing' | 'shipped' | 'delivered' | 'cancelled';
+  paymentStatus: 'pending' | 'completed' | 'failed';
+  paymentMethod: string;
   createdAt: string;
-  items: any[];
+  shippingAddress: Address;
+  billingAddress: Address;
+  trackingNumber?: string;
+  notes?: string;
+  history: OrderHistoryEntry[];
+  items: OrderItem[];
 }
+
+const ORDER_STATUS_OPTIONS: Order['status'][] = ['pending', 'processing', 'shipped', 'delivered', 'cancelled'];
+const PAYMENT_STATUS_OPTIONS: Order['paymentStatus'][] = ['pending', 'completed', 'failed'];
+const ITEMS_PER_PAGE = 10;
 
 export default function OrdersPage() {
   const [orders, setOrders] = useState<Order[]>([]);
@@ -22,7 +59,14 @@ export default function OrdersPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const [showModal, setShowModal] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
-  const itemsPerPage = 10;
+  const [updateForm, setUpdateForm] = useState({
+    status: 'pending' as Order['status'],
+    paymentStatus: 'pending' as Order['paymentStatus'],
+    trackingNumber: '',
+    notes: '',
+  });
+  const [isUpdating, setIsUpdating] = useState(false);
+  const [updateMessage, setUpdateMessage] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchOrders = async () => {
@@ -48,21 +92,33 @@ export default function OrdersPage() {
     fetchOrders();
   }, []);
 
+  useEffect(() => {
+    if (selectedOrder) {
+      setUpdateForm({
+        status: selectedOrder.status,
+        paymentStatus: selectedOrder.paymentStatus,
+        trackingNumber: selectedOrder.trackingNumber || '',
+        notes: selectedOrder.notes || '',
+      });
+      setUpdateMessage(null);
+    }
+  }, [selectedOrder]);
+
   const filteredOrders = orders.filter((o) => {
     const matchesStatus = filterStatus === 'all' || o.status === filterStatus;
     const matchesPayment = filterPayment === 'all' || o.paymentStatus === filterPayment;
     const matchesSearch = !searchTerm ||
       o.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      o.userId.toLowerCase().includes(searchTerm.toLowerCase());
+      o.customerName.toLowerCase().includes(searchTerm.toLowerCase());
     return matchesStatus && matchesPayment && matchesSearch;
   });
 
   const paginatedOrders = filteredOrders.slice(
-    (currentPage - 1) * itemsPerPage,
-    currentPage * itemsPerPage
+    (currentPage - 1) * ITEMS_PER_PAGE,
+    currentPage * ITEMS_PER_PAGE
   );
 
-  const totalPages = Math.ceil(filteredOrders.length / itemsPerPage);
+  const totalPages = Math.max(1, Math.ceil(filteredOrders.length / ITEMS_PER_PAGE));
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -99,6 +155,57 @@ export default function OrdersPage() {
     setShowModal(true);
   };
 
+  const handleUpdateOrder = async () => {
+    if (!selectedOrder) return;
+    setIsUpdating(true);
+    setUpdateMessage(null);
+
+    try {
+      const token = localStorage.getItem('admin_token');
+      const response = await fetch('/api/admin/orders', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          id: selectedOrder.id,
+          status: updateForm.status,
+          paymentStatus: updateForm.paymentStatus,
+          trackingNumber: updateForm.trackingNumber,
+          notes: updateForm.notes,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to update order');
+      }
+
+      const data = await response.json();
+      setOrders((prev) =>
+        prev.map((order) => (order.id === data.order.id ? data.order : order))
+      );
+      setSelectedOrder(data.order);
+      setUpdateMessage('Order updated successfully.');
+    } catch (error) {
+      console.error('Failed to update order:', error);
+      setUpdateMessage('Failed to update order. Please try again.');
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
+  const formatAddress = (address: Address) => (
+    <div className="text-sm text-gray-700 space-y-1">
+      <p className="font-medium text-gray-900">{address.fullName}</p>
+      <p>{address.street}</p>
+      <p>{address.city}, {address.state} {address.postalCode}</p>
+      <p>{address.country}</p>
+      <p className="text-gray-500">{address.phone}</p>
+      <p className="text-gray-500">{address.email}</p>
+    </div>
+  );
+
   return (
     <div>
       <div className="mb-6">
@@ -133,11 +240,9 @@ export default function OrdersPage() {
               className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-gray-400"
             >
               <option value="all">All Statuses</option>
-              <option value="pending">Pending</option>
-              <option value="processing">Processing</option>
-              <option value="shipped">Shipped</option>
-              <option value="delivered">Delivered</option>
-              <option value="cancelled">Cancelled</option>
+              {ORDER_STATUS_OPTIONS.map((status) => (
+                <option key={status} value={status}>{status}</option>
+              ))}
             </select>
           </div>
           <div>
@@ -151,9 +256,9 @@ export default function OrdersPage() {
               className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-gray-400"
             >
               <option value="all">All Payments</option>
-              <option value="completed">Completed</option>
-              <option value="pending">Pending</option>
-              <option value="failed">Failed</option>
+              {PAYMENT_STATUS_OPTIONS.map((status) => (
+                <option key={status} value={status}>{status}</option>
+              ))}
             </select>
           </div>
         </div>
@@ -183,8 +288,11 @@ export default function OrdersPage() {
                 <tbody className="divide-y divide-gray-200">
                   {paginatedOrders.map((order) => (
                     <tr key={order.id} className="hover:bg-gray-50 transition-colors">
-                      <td className="px-4 py-3 text-sm font-mono text-gray-900">order-{order.id.substring(0, 2)}</td>
-                      <td className="px-4 py-3 text-sm text-gray-600">{order.userId}</td>
+                      <td className="px-4 py-3 text-sm font-mono text-gray-900">{order.id}</td>
+                      <td className="px-4 py-3 text-sm text-gray-600">
+                        <p className="font-medium text-gray-900">{order.customerName}</p>
+                        <p className="text-xs text-gray-500">{order.customerEmail}</p>
+                      </td>
                       <td className="px-4 py-3 text-sm font-medium text-gray-900">€{order.total.toFixed(2)}</td>
                       <td className="px-4 py-3 text-sm">
                         <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${getStatusColor(order.status)}`}>
@@ -224,8 +332,8 @@ export default function OrdersPage() {
             {/* Pagination */}
             <div className="px-4 py-3 bg-gray-50 border-t border-gray-200 flex justify-between items-center">
               <p className="text-xs text-gray-600">
-                Showing {(currentPage - 1) * itemsPerPage + 1} to{' '}
-                {Math.min(currentPage * itemsPerPage, filteredOrders.length)} of {filteredOrders.length}
+                Showing {(currentPage - 1) * ITEMS_PER_PAGE + 1} to{' '}
+                {Math.min(currentPage * ITEMS_PER_PAGE, filteredOrders.length)} of {filteredOrders.length}
               </p>
               <div className="flex items-center space-x-2">
                 <button
@@ -254,7 +362,7 @@ export default function OrdersPage() {
       {/* View Order Modal */}
       {showModal && selectedOrder && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg max-w-3xl w-full max-h-[90vh] overflow-y-auto">
+          <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto">
             <div className="p-6">
               {/* Header */}
               <div className="flex justify-between items-start mb-6">
@@ -276,7 +384,12 @@ export default function OrdersPage() {
               <div className="grid grid-cols-2 gap-6 mb-6">
                 <div>
                   <h3 className="text-sm font-medium text-gray-700 mb-2">Customer</h3>
-                  <p className="text-sm text-gray-900">{selectedOrder.userId}</p>
+                  <div className="text-sm text-gray-900 space-y-1">
+                    <p className="font-medium">{selectedOrder.customerName}</p>
+                    <p>{selectedOrder.customerEmail}</p>
+                    {selectedOrder.customerPhone && <p>{selectedOrder.customerPhone}</p>}
+                    <p className="text-gray-500">Account ID: {selectedOrder.userId}</p>
+                  </div>
                 </div>
                 <div>
                   <h3 className="text-sm font-medium text-gray-700 mb-2">Order Date</h3>
@@ -295,12 +408,30 @@ export default function OrdersPage() {
                   <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${getStatusColor(selectedOrder.status)}`}>
                     {selectedOrder.status}
                   </span>
+                  <p className="text-xs text-gray-500 mt-1">Payment method: {selectedOrder.paymentMethod}</p>
                 </div>
                 <div>
                   <h3 className="text-sm font-medium text-gray-700 mb-2">Payment Status</h3>
                   <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${getPaymentStatusColor(selectedOrder.paymentStatus)}`}>
                     {selectedOrder.paymentStatus}
                   </span>
+                </div>
+              </div>
+
+              {/* Addresses */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                <div className="border border-gray-200 rounded-lg p-4">
+                  <h3 className="text-sm font-semibold text-gray-800 mb-3">Shipping Address</h3>
+                  {formatAddress(selectedOrder.shippingAddress)}
+                  {selectedOrder.trackingNumber && (
+                    <p className="text-sm text-gray-700 mt-3">
+                      <span className="font-medium">Tracking:</span> {selectedOrder.trackingNumber}
+                    </p>
+                  )}
+                </div>
+                <div className="border border-gray-200 rounded-lg p-4">
+                  <h3 className="text-sm font-semibold text-gray-800 mb-3">Billing Address</h3>
+                  {formatAddress(selectedOrder.billingAddress)}
                 </div>
               </div>
 
@@ -319,7 +450,10 @@ export default function OrdersPage() {
                     <tbody>
                       {selectedOrder.items.map((item, index) => (
                         <tr key={index} className="border-b border-gray-200 last:border-0">
-                          <td className="px-4 py-3 text-sm text-gray-900">{item.productId}</td>
+                          <td className="px-4 py-3 text-sm text-gray-900">
+                            <p className="font-medium">{item.productName}</p>
+                            <p className="text-xs text-gray-500">{item.productId}</p>
+                          </td>
                           <td className="px-4 py-3 text-sm text-gray-600 text-center">{item.quantity}</td>
                           <td className="px-4 py-3 text-sm text-gray-900 text-right">€{item.price.toFixed(2)}</td>
                         </tr>
@@ -337,19 +471,100 @@ export default function OrdersPage() {
                 </div>
               </div>
 
-              {/* Actions */}
-              <div className="flex gap-3">
-                <button
-                  onClick={() => setShowModal(false)}
-                  className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-medium py-2 px-4 rounded-md transition-colors"
-                >
-                  Close
-                </button>
-                <button
-                  className="flex-1 bg-gray-900 hover:bg-gray-800 text-white text-sm font-medium py-2 px-4 rounded-md transition-colors"
-                >
-                  Update Status
-                </button>
+              {/* Timeline */}
+              <div className="mb-6">
+                <h3 className="text-sm font-medium text-gray-700 mb-3">Timeline</h3>
+                <div className="space-y-3">
+                  {selectedOrder.history.map((entry, index) => (
+                    <div key={index} className="flex items-start gap-3">
+                      <div className="w-2 h-2 rounded-full bg-gray-400 mt-2" />
+                      <div>
+                        <p className="text-sm font-medium text-gray-900">{entry.label}</p>
+                        <p className="text-xs text-gray-500">
+                          {new Date(entry.date).toLocaleString('en-US', {
+                            year: 'numeric',
+                            month: 'short',
+                            day: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit'
+                          })}
+                        </p>
+                        {entry.note && <p className="text-xs text-gray-600 mt-1">{entry.note}</p>}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Update Form */}
+              <div className="border border-gray-200 rounded-lg p-4 mb-6">
+                <h3 className="text-sm font-semibold text-gray-800 mb-4">Update Order</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 mb-1">Order Status</label>
+                    <select
+                      value={updateForm.status}
+                      onChange={(e) => setUpdateForm((prev) => ({ ...prev, status: e.target.value as Order['status'] }))}
+                      className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-gray-400"
+                    >
+                      {ORDER_STATUS_OPTIONS.map((status) => (
+                        <option key={status} value={status}>{status}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 mb-1">Payment Status</label>
+                    <select
+                      value={updateForm.paymentStatus}
+                      onChange={(e) => setUpdateForm((prev) => ({ ...prev, paymentStatus: e.target.value as Order['paymentStatus'] }))}
+                      className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-gray-400"
+                    >
+                      {PAYMENT_STATUS_OPTIONS.map((status) => (
+                        <option key={status} value={status}>{status}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 mb-1">Tracking Number</label>
+                    <input
+                      type="text"
+                      value={updateForm.trackingNumber}
+                      onChange={(e) => setUpdateForm((prev) => ({ ...prev, trackingNumber: e.target.value }))}
+                      className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-gray-400"
+                      placeholder="Add tracking reference..."
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 mb-1">Internal Notes</label>
+                    <textarea
+                      value={updateForm.notes}
+                      onChange={(e) => setUpdateForm((prev) => ({ ...prev, notes: e.target.value }))}
+                      rows={3}
+                      className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-gray-400"
+                      placeholder="Visible to admins only..."
+                    />
+                  </div>
+                </div>
+                {updateMessage && (
+                  <p className="text-xs text-gray-600 mb-3">{updateMessage}</p>
+                )}
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => setShowModal(false)}
+                    className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-medium py-2 px-4 rounded-md transition-colors"
+                  >
+                    Close
+                  </button>
+                  <button
+                    onClick={handleUpdateOrder}
+                    disabled={isUpdating}
+                    className="flex-1 bg-gray-900 hover:bg-gray-800 text-white text-sm font-medium py-2 px-4 rounded-md transition-colors disabled:opacity-60"
+                  >
+                    {isUpdating ? 'Saving...' : 'Update Order'}
+                  </button>
+                </div>
               </div>
             </div>
           </div>
@@ -358,4 +573,3 @@ export default function OrdersPage() {
     </div>
   );
 }
-
